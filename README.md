@@ -140,6 +140,22 @@ MediaFlow AI is designed from the ground up to **NOT** look like a traditional d
 
 ---
 
+## 🐍 Python Core Engine & Real-Time Observer
+
+MediaFlow AI includes a dual-engine architecture where **Python** powers high-speed image processing, neural hashing, real-time filesystem observation, and API serving:
+
+1. **Embedded On-Device Python (`app/src/main/python/mediaflow_engine.py`)**:
+   - Packaged with the Android APK via Chaquopy.
+   - Computes 64-bit difference hash (`dHash`), dominant tone extraction, natural language query ranking, and duplicate graph clustering directly in Python on Android.
+   - [PythonBridge.kt](file:///e:/PROJECTS/images-sort/app/src/main/java/com/mediaflow/ai/ai/PythonBridge.kt) connects Kotlin directly with `mediaflow_engine.py`.
+
+2. **Standalone Python AI Media Sorter & Real-Time Watcher (`python_engine/`)**:
+   - `python python_engine/run.py scan <folder>`: Indexes, categorizes, extracts EXIF, and detects duplicates for any media directory into SQLite.
+   - `python python_engine/run.py watch <folder>`: Live filesystem observer that auto-organizes incoming photos and videos in real time.
+   - `python python_engine/run.py serve`: High-performance FastAPI & WebSocket server for querying sorted media, semantic search, and streaming live `"5 new photos organized"` notifications.
+
+---
+
 ## 🛠️ Tech Stack & Dependencies
 
 | Component | Library / Framework | Version |

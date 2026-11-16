@@ -18,18 +18,21 @@ class AiPipeline @Inject constructor(
     @ApplicationContext private val context: Context,
     private val classifierEngine: ImageClassifierEngine,
     private val ocrEngine: OcrEngine,
-    private val faceDetectionEngine: FaceDetectionEngine
+    private val faceDetectionEngine: FaceDetectionEngine,
+    private val pythonBridge: PythonBridge
 ) {
     suspend fun processMedia(entity: MediaEntity): MediaEntity = withContext(Dispatchers.IO) {
         val uri = Uri.parse(entity.uriString)
         val bitmap = decodeSampledBitmapFromUri(uri, 512, 512) ?: return@withContext entity.copy(isProcessedByAi = true)
 
         try {
-            // 1. Perceptual dHash calculation
-            val hash = PerceptualHash.calculateDHash(bitmap)
+            // 1. Perceptual dHash calculation (Python preferred if available)
+            val hash = pythonBridge.calculateDHashWithPython(bitmap) 
+                ?: PerceptualHash.calculateDHash(bitmap)
 
-            // 2. Dominant color extraction
-            val dominantColor = ColorPaletteExtractor.extractDominantColorHex(bitmap)
+            // 2. Dominant color extraction (Python preferred if available)
+            val dominantColor = pythonBridge.extractDominantColorWithPython(bitmap)
+                ?: ColorPaletteExtractor.extractDominantColorHex(bitmap)
 
             // 3. Object & Scene Classification
             val (tags, inferredScene) = classifierEngine.classifyImage(bitmap)
