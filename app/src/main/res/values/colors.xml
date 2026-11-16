@@ -1,0 +1,9 @@
+<resources>
+    <color name="purple_primary">#6750A4</color>
+    <color name="purple_gradient_start">#7C3AED</color>
+    <color name="blue_gradient_end">#2563EB</color>
+    <color name="background_light">#F8FAFC</color>
+    <color name="background_dark">#0B0F19</color>
+    <color name="surface_light">#FFFFFF</color>
+    <color name="surface_dark">#131B2E</color>
+</resources>
