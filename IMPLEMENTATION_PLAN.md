@@ -4,6 +4,28 @@ A phased development, refinement, and delivery plan for **MediaFlow AI** — a p
 
 ---
 
+## 🐍 Python-First Architecture (Zero Trade-off Integration)
+
+MediaFlow AI adopts a **Python-First** execution pipeline without sacrificing 60 FPS Material 3 gesture physics or Google Play compatibility:
+
+1. **Python as the Brain (`mediaflow_engine.py`)**:
+   - **Perceptual dHash & pHash**: Calculated directly in Python from raw byte streams.
+   - **Smart Album Routing**: Categorizes photos into *People, Travel, Nature, Cars, Food, Pets, Documents, Screenshots, Videos, Night Sky*.
+   - **Duplicate Graph Clustering**: Disjoint-set (Union-Find) clustering algorithm running in Python, calculating exact recoverable byte savings.
+   - **Semantic Search Ranker**: Python natural language tokenizer and relevance scoring.
+   - **Dominant Color Extractor**: PIL-based palette extractor for dynamic theme accents.
+
+2. **Kotlin as the Display Shell**:
+   - Exclusively renders the high-performance Jetpack Compose UI (dynamic 2–4 column grid, sticky date headers, Arc top bar, fullscreen viewer with pinch zoom, and animated bottom sheets).
+   - [PythonBridge.kt](file:///e:/PROJECTS/images-sort/app/src/main/java/com/mediaflow/ai/ai/PythonBridge.kt) acts as the bridge connecting Kotlin directly to `mediaflow_engine.py`.
+
+3. **Standalone Python Suite (`python_engine/`)**:
+   - `python python_engine/run.py scan <dir>`: CLI batch sorter.
+   - `python python_engine/run.py watch <dir>`: Live filesystem observer auto-sorting new files on arrival.
+   - `python python_engine/run.py serve`: FastAPI REST + WebSocket media server.
+
+---
+
 ## 🏛️ System Architecture Overview
 
 ```
