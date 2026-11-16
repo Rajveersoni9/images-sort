@@ -26,48 +26,61 @@ class AiPipeline @Inject constructor(
         val bitmap = decodeSampledBitmapFromUri(uri, 512, 512) ?: return@withContext entity.copy(isProcessedByAi = true)
 
         try {
-            // 1. Perceptual dHash calculation (Python preferred if available)
-            val hash = pythonBridge.calculateDHashWithPython(bitmap) 
-                ?: PerceptualHash.calculateDHash(bitmap)
-
-            // 2. Dominant color extraction (Python preferred if available)
-            val dominantColor = pythonBridge.extractDominantColorWithPython(bitmap)
-                ?: ColorPaletteExtractor.extractDominantColorHex(bitmap)
-
-            // 3. Object & Scene Classification
-            val (tags, inferredScene) = classifierEngine.classifyImage(bitmap)
-
-            // 4. Face Detection
+            // 1. Raw visual signals (ML Kit detectors)
+            val (rawTags, rawScene) = classifierEngine.classifyImage(bitmap)
             val facesCount = faceDetectionEngine.countFaces(bitmap)
-
-            // 5. OCR (Text recognition) - prioritize for documents/screenshots or when text is detected
-            val ocrText = if (inferredScene == SceneCategory.DOCUMENT || inferredScene == SceneCategory.SCREENSHOT || tags.any { it.contains("text", ignoreCase = true) }) {
+            val ocrText = if (rawScene == SceneCategory.DOCUMENT || rawScene == SceneCategory.SCREENSHOT || rawTags.any { it.contains("text", ignoreCase = true) }) {
                 ocrEngine.extractText(bitmap)
             } else null
 
-            // Determine final category (e.g. if faces >= 1, and no specific scene, mark as PEOPLE)
-            val finalScene = if (facesCount > 0 && inferredScene == SceneCategory.GENERAL) {
-                SceneCategory.PEOPLE
-            } else {
-                inferredScene
-            }
-
-            val finalTags = buildList {
-                addAll(tags)
-                if (facesCount > 0) add("Faces ($facesCount)")
-                if (!ocrText.isNullOrBlank()) add("Has Text")
-                if (entity.mediaType == MediaType.VIDEO) add("Video")
-            }.distinct()
-
-            entity.copy(
-                aiTags = finalTags,
-                sceneCategory = finalScene,
-                detectedFacesCount = facesCount,
+            // 2. Python AI Processing (Preferred)
+            val pythonPayload = pythonBridge.analyzeMediaFull(
+                bitmap = bitmap,
+                filename = entity.displayName,
+                rawTags = rawTags,
                 ocrText = ocrText,
-                dominantColorHex = dominantColor,
-                perceptualHash = hash,
-                isProcessedByAi = true
+                faceCount = facesCount
             )
+
+            if (pythonPayload != null) {
+                val finalCategory = runCatching { SceneCategory.valueOf(pythonPayload.sceneCategory) }.getOrDefault(rawScene)
+                val finalTags = buildList {
+                    addAll(pythonPayload.aiTags)
+                    if (entity.mediaType == MediaType.VIDEO) add("Video")
+                }.distinct()
+
+                entity.copy(
+                    aiTags = finalTags,
+                    sceneCategory = finalCategory,
+                    detectedFacesCount = facesCount,
+                    ocrText = ocrText,
+                    dominantColorHex = pythonPayload.dominantColorHex,
+                    perceptualHash = pythonPayload.perceptualHash,
+                    isProcessedByAi = true
+                )
+            } else {
+                // Native Kotlin fallback
+                val hash = PerceptualHash.calculateDHash(bitmap)
+                val dominantColor = ColorPaletteExtractor.extractDominantColorHex(bitmap)
+                val finalScene = if (facesCount > 0 && rawScene == SceneCategory.GENERAL) SceneCategory.PEOPLE else rawScene
+
+                val finalTags = buildList {
+                    addAll(rawTags)
+                    if (facesCount > 0) add("Faces ($facesCount)")
+                    if (!ocrText.isNullOrBlank()) add("Has Text")
+                    if (entity.mediaType == MediaType.VIDEO) add("Video")
+                }.distinct()
+
+                entity.copy(
+                    aiTags = finalTags,
+                    sceneCategory = finalScene,
+                    detectedFacesCount = facesCount,
+                    ocrText = ocrText,
+                    dominantColorHex = dominantColor,
+                    perceptualHash = hash,
+                    isProcessedByAi = true
+                )
+            }
         } catch (e: Exception) {
             entity.copy(isProcessedByAi = true)
         } finally {
@@ -83,7 +96,6 @@ class AiPipeline @Inject constructor(
                 }
                 BitmapFactory.decodeStream(stream, null, options)
 
-                // Calculate inSampleSize
                 var inSampleSize = 1
                 if (options.outHeight > reqHeight || options.outWidth > reqWidth) {
                     val halfHeight = options.outHeight / 2
@@ -93,7 +105,6 @@ class AiPipeline @Inject constructor(
                     }
                 }
 
-                // Decode with inSampleSize set
                 context.contentResolver.openInputStream(uri)?.use { secondStream ->
                     val decodeOptions = BitmapFactory.Options().apply {
                         this.inSampleSize = inSampleSize

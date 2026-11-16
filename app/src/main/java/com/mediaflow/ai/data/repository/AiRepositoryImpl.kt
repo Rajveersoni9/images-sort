@@ -1,13 +1,12 @@
 package com.mediaflow.ai.data.repository
 
-import android.net.Uri
 import com.mediaflow.ai.ai.AiPipeline
 import com.mediaflow.ai.ai.PerceptualHash
+import com.mediaflow.ai.ai.PythonBridge
 import com.mediaflow.ai.data.local.dao.ActivityTaskDao
 import com.mediaflow.ai.data.local.dao.AlbumDao
 import com.mediaflow.ai.data.local.dao.MediaDao
 import com.mediaflow.ai.data.local.entity.ActivityTaskEntity
-import com.mediaflow.ai.domain.model.ActivityTask
 import com.mediaflow.ai.domain.model.MediaItem
 import com.mediaflow.ai.domain.model.TaskStatus
 import com.mediaflow.ai.domain.model.TaskType
@@ -18,6 +17,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,7 +28,8 @@ class AiRepositoryImpl @Inject constructor(
     private val mediaDao: MediaDao,
     private val albumDao: AlbumDao,
     private val activityTaskDao: ActivityTaskDao,
-    private val aiPipeline: AiPipeline
+    private val aiPipeline: AiPipeline,
+    private val pythonBridge: PythonBridge
 ) : AiRepository {
 
     private val _isProcessing = MutableStateFlow(false)
@@ -89,26 +91,56 @@ class AiRepositoryImpl @Inject constructor(
 
     override suspend fun detectDuplicates(): Int = withContext(Dispatchers.IO) {
         val allMedia = mediaDao.getUnprocessedMedia(200)
+        if (allMedia.isEmpty()) return@withContext 0
+
+        // Attempt Python Disjoint-Set Clustering First
+        val jsonArray = JSONArray()
+        allMedia.forEach { item ->
+            if (item.perceptualHash != null) {
+                val obj = JSONObject()
+                obj.put("id", item.id)
+                obj.put("hash", item.perceptualHash)
+                obj.put("sizeBytes", item.sizeBytes)
+                jsonArray.put(obj)
+            }
+        }
+
+        val pythonResult = pythonBridge.clusterDuplicates(jsonArray.toString())
         var duplicatesFound = 0
-        for (i in allMedia.indices) {
-            val hash1 = allMedia[i].perceptualHash ?: continue
-            for (j in i + 1 until allMedia.size) {
-                val hash2 = allMedia[j].perceptualHash ?: continue
-                val dist = PerceptualHash.hammingDistance(hash1, hash2)
-                if (dist <= 5) {
-                    val groupId = "dup_${allMedia[i].id}"
-                    mediaDao.update(allMedia[i].copy(isDuplicate = true, duplicateGroupId = groupId))
-                    mediaDao.update(allMedia[j].copy(isDuplicate = true, duplicateGroupId = groupId))
-                    duplicatesFound++
+
+        if (pythonResult != null) {
+            pythonResult.duplicateGroups.forEach { (groupId, ids) ->
+                ids.forEach { mediaId ->
+                    val entity = allMedia.find { it.id == mediaId }
+                    if (entity != null) {
+                        mediaDao.update(entity.copy(isDuplicate = true, duplicateGroupId = groupId))
+                        duplicatesFound++
+                    }
+                }
+            }
+        } else {
+            // Native fallback
+            for (i in allMedia.indices) {
+                val hash1 = allMedia[i].perceptualHash ?: continue
+                for (j in i + 1 until allMedia.size) {
+                    val hash2 = allMedia[j].perceptualHash ?: continue
+                    val dist = PerceptualHash.hammingDistance(hash1, hash2)
+                    if (dist <= 5) {
+                        val groupId = "dup_${allMedia[i].id}"
+                        mediaDao.update(allMedia[i].copy(isDuplicate = true, duplicateGroupId = groupId))
+                        mediaDao.update(allMedia[j].copy(isDuplicate = true, duplicateGroupId = groupId))
+                        duplicatesFound++
+                    }
                 }
             }
         }
+
         if (duplicatesFound > 0) {
             activityTaskDao.insertOrUpdate(
                 ActivityTaskEntity(
                     id = UUID.randomUUID().toString(),
                     title = "$duplicatesFound duplicates detected",
-                    subtitle = "Found near-identical shots",
+                    subtitle = "Clustered with Python difference hashing",
                     taskType = TaskType.DUPLICATE_SCAN,
                     status = TaskStatus.COMPLETED,
                     progress = 1.0f,
