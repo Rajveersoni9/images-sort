@@ -58,6 +58,50 @@ class MediaFlowSorter:
             """)
             conn.commit()
 
+            cursor.execute("SELECT COUNT(*) FROM media_items")
+            if cursor.fetchone()[0] == 0:
+                self._populate_demo_media(cursor)
+                conn.commit()
+
+    def _populate_demo_media(self, cursor):
+        now = int(datetime.now().timestamp() * 1000)
+        day = 86400000
+        samples = [
+            ("https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80", "IMG_Tropical_Sunset.jpg", "image/jpeg", "IMAGE", now, 4250000, 3840, 2160, 1, 0, None, json.dumps(["Sunset", "Beach", "Ocean", "Golden Hour", "Tropical"]), "TRAVEL", "#F59E0B", 987654321),
+            ("https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=1200&q=80", "IMG_Golden_Retriever.jpg", "image/jpeg", "IMAGE", now, 3120000, 4032, 3024, 1, 0, None, json.dumps(["Dog", "Golden Retriever", "Pet", "Puppy", "Cute"]), "PETS", "#D97706", 123456789),
+            ("https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1200&q=80", "IMG_Porsche_911.jpg", "image/jpeg", "IMAGE", now - day, 5800000, 3840, 2560, 0, 0, None, json.dumps(["Red Car", "Porsche", "Supercar", "Speed"]), "CARS", "#DC2626", 555555555),
+            ("https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1200&q=80", "IMG_Portrait_Sarah.jpg", "image/jpeg", "IMAGE", now - day, 6100000, 3000, 4000, 1, 0, None, json.dumps(["Portrait", "Smile", "Person", "Girl", "Blue Shirt"]), "PEOPLE", "#8B5CF6", 888888888),
+            ("https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=80", "IMG_Alpine_Peaks.jpg", "image/jpeg", "IMAGE", now - (day * 2), 7400000, 4000, 2250, 0, 0, None, json.dumps(["Mountain", "Snow", "Peak", "Sky", "Nature"]), "NATURE", "#3B82F6", 333333333),
+            ("https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=1200&q=80", "IMG_Gourmet_Burger.jpg", "image/jpeg", "IMAGE", now - (day * 2), 3900000, 3024, 3024, 0, 0, None, json.dumps(["Food", "Burger", "Cuisine", "Delicious"]), "FOOD", "#EA580C", 444444444),
+            ("https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1200&q=80", "IMG_Milky_Way_Night.jpg", "image/jpeg", "IMAGE", now - (day * 3), 8200000, 4032, 3024, 1, 0, None, json.dumps(["Night Sky", "Stars", "Milky Way", "Astronomy"]), "NIGHT_SKY", "#1E1B4B", 222222222),
+            ("https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=1200&q=80", "DOC_Passport_Scan.jpg", "image/jpeg", "IMAGE", now - (day * 4), 2100000, 2480, 3508, 0, 0, None, json.dumps(["Document", "Passport", "Contract", "Text"]), "DOCUMENTS", "#64748B", 111111111),
+            ("https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80", "Screenshot_Code_Snippet.png", "image/png", "IMAGE", now - (day * 5), 1400000, 1080, 2400, 0, 0, None, json.dumps(["Screenshot", "Technology", "Code", "Android"]), "SCREENSHOTS", "#0F172A", 777777777)
+        ]
+        for s in samples:
+            cursor.execute("""
+                INSERT OR REPLACE INTO media_items (
+                    path, display_name, mime_type, media_type, date_taken, size_bytes,
+                    width, height, is_favorite, is_duplicate, duplicate_group_id,
+                    ai_tags, scene_category, dominant_color_hex, perceptual_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, s)
+
+        albums = [
+            ("album_people", "People & Pets", "PEOPLE", 142, "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80"),
+            ("album_travel", "Travel & Places", "TRAVEL", 89, "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80"),
+            ("album_nature", "Nature & Mountains", "NATURE", 215, "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&q=80"),
+            ("album_cars", "Cars & Vehicles", "CARS", 48, "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=600&q=80"),
+            ("album_food", "Food & Dining", "FOOD", 63, "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=600&q=80"),
+            ("album_documents", "Documents & Receipts", "DOCUMENTS", 37, "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=600&q=80"),
+            ("album_screenshots", "Screenshots", "SCREENSHOTS", 184, "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=600&q=80"),
+            ("album_videos", "Videos & Clips", "VIDEOS", 52, "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80")
+        ]
+        for a in albums:
+            cursor.execute("""
+                INSERT OR REPLACE INTO smart_albums (id, title, category, item_count, cover_path)
+                VALUES (?, ?, ?, ?, ?)
+            """, a)
+
     def calculate_dhash(self, img_path: Path, hash_size: int = 8) -> Optional[int]:
         try:
             with Image.open(img_path) as img:
