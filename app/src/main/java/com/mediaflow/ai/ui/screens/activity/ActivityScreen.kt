@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import com.mediaflow.ai.domain.model.ActivityTask
 import com.mediaflow.ai.domain.model.TaskType
 import com.mediaflow.ai.ui.components.GlassmorphicSurface
+import com.mediaflow.ai.ui.components.SphereSortingAnimationView
 import com.mediaflow.ai.ui.theme.BlueAccent
 import com.mediaflow.ai.ui.theme.PurplePrimary
 import com.mediaflow.ai.ui.theme.SuccessGreen
@@ -150,12 +151,18 @@ fun ActivityScreen(
             }
         }
 
-        // Activity Task List
+        // Activity Task List with 3D Sphere Sorting Hero View
         LazyColumn(
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 100.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
             modifier = Modifier.fillMaxSize()
         ) {
+            item {
+                SphereSortingAnimationView(
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+            }
+
             items(state.tasks, key = { it.id }) { task ->
                 ActivityCard(task = task)
             }

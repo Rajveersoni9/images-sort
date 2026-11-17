@@ -27,6 +27,22 @@ interface MediaDao {
     @Query("SELECT * FROM media_items WHERE sceneCategory = :category ORDER BY dateTaken DESC")
     fun getMediaBySceneCategoryFlow(category: SceneCategory): Flow<List<MediaEntity>>
 
+    @Query("""
+        SELECT * FROM media_items 
+        WHERE sceneCategory = :category 
+           OR aiTags LIKE '%' || :keyword || '%' 
+           OR path LIKE '%' || :keyword || '%' 
+           OR displayName LIKE '%' || :keyword || '%'
+        ORDER BY dateTaken DESC
+    """)
+    fun getMediaByCategoryOrKeywordFlow(category: SceneCategory, keyword: String): Flow<List<MediaEntity>>
+
+    @Query("SELECT * FROM media_items WHERE sceneCategory = :category OR path LIKE '%' || :keyword || '%' OR displayName LIKE '%' || :keyword || '%' ORDER BY dateTaken DESC LIMIT 1")
+    suspend fun getCoverForCategory(category: SceneCategory, keyword: String): MediaEntity?
+
+    @Query("SELECT COUNT(*) FROM media_items WHERE sceneCategory = :category OR path LIKE '%' || :keyword || '%' OR displayName LIKE '%' || :keyword || '%'")
+    suspend fun getCategoryCountWithKeyword(category: SceneCategory, keyword: String): Int
+
     @Query("SELECT * FROM media_items WHERE isDuplicate = 1 ORDER BY duplicateGroupId, dateTaken DESC")
     fun getDuplicatesFlow(): Flow<List<MediaEntity>>
 

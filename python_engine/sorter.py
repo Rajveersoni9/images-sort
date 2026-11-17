@@ -257,6 +257,94 @@ class MediaFlowSorter:
         self._update_album_counts()
         return processed_count
 
+    def organize_and_export(self, source_dir: str, dest_dir: Optional[str] = None, mode: str = "copy") -> Dict[str, Any]:
+        """
+        Physically sorts and organizes files from source_dir into categorized subdirectories in dest_dir.
+        Categories match the 11 smart folders:
+        Selfies, Events & weddings, Travel, Screenshots, Receipts & docs,
+        Duplicates, Family & friends, Food, Nature & views, Animals & pets, Things & shopping.
+        """
+        source_path = Path(source_dir).resolve()
+        if not source_path.exists():
+            return {"status": "error", "message": f"Source directory does not exist: {source_dir}"}
+
+        if not dest_dir:
+            dest_path = source_path / "MediaFlow_Sorted"
+        else:
+            dest_path = Path(dest_dir).resolve()
+
+        dest_path.mkdir(parents=True, exist_ok=True)
+
+        # First scan & classify
+        self.scan_directory(str(source_path))
+
+        category_folder_map = {
+            "PEOPLE": "Selfies_and_Portraits",
+            "EVENTS": "Events_and_Weddings",
+            "TRAVEL": "Travel",
+            "SCREENSHOTS": "Screenshots",
+            "DOCUMENTS": "Receipts_and_Docs",
+            "DUPLICATES": "Duplicates",
+            "FAMILY": "Family_and_Friends",
+            "FOOD": "Food",
+            "NATURE": "Nature_and_Views",
+            "PETS": "Animals_and_Pets",
+            "CARS": "Things_and_Shopping",
+            "GENERAL": "General_Photos",
+            "VIDEOS": "Videos"
+        }
+
+        # Ensure all folders exist
+        for folder_name in category_folder_map.values():
+            (dest_path / folder_name).mkdir(exist_ok=True)
+
+        sorted_stats = {folder: 0 for folder in category_folder_map.values()}
+        total_organized = 0
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT path, display_name, scene_category, is_duplicate FROM media_items WHERE path LIKE ?", (f"{str(source_path)}%",))
+            rows = cursor.fetchall()
+
+            for row in rows:
+                src_file = Path(row["path"])
+                if not src_file.exists():
+                    continue
+
+                if row["is_duplicate"] == 1:
+                    target_folder_name = "Duplicates"
+                else:
+                    cat = row["scene_category"] or "GENERAL"
+                    target_folder_name = category_folder_map.get(cat, "General_Photos")
+
+                target_dest = dest_path / target_folder_name / src_file.name
+
+                # Prevent overwriting identically named files
+                if target_dest.exists() and target_dest != src_file:
+                    stem = src_file.stem
+                    suffix = src_file.suffix
+                    target_dest = dest_path / target_folder_name / f"{stem}_{int(datetime.now().timestamp())}{suffix}"
+
+                try:
+                    if mode == "move":
+                        shutil.move(str(src_file), str(target_dest))
+                    else:
+                        shutil.copy2(str(src_file), str(target_dest))
+                    sorted_stats[target_folder_name] += 1
+                    total_organized += 1
+                except Exception as e:
+                    print(f"Error organizing {src_file}: {e}")
+
+        return {
+            "status": "success",
+            "source": str(source_path),
+            "destination": str(dest_path),
+            "total_organized": total_organized,
+            "mode": mode,
+            "breakdown": sorted_stats
+        }
+
     def _find_duplicates(self):
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()

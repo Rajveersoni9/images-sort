@@ -86,6 +86,8 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.androidx.hilt.work)
+    ksp(libs.androidx.hilt.compiler)
 
     // Local Database - Room
     implementation(libs.androidx.room.runtime)
@@ -110,6 +112,7 @@ dependencies {
 
     // Coroutines & Datastore
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.androidx.datastore.preferences)
 
     // Debugging & Testing

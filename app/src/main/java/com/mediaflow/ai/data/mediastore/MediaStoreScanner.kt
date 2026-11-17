@@ -28,7 +28,7 @@ class MediaStoreScanner @Inject constructor(
 
     private fun queryImages(): List<MediaEntity> {
         val list = mutableListOf<MediaEntity>()
-        val projection = arrayOf(
+        val projection = mutableListOf(
             MediaStore.Images.Media._ID,
             MediaStore.Images.Media.DISPLAY_NAME,
             MediaStore.Images.Media.MIME_TYPE,
@@ -38,7 +38,12 @@ class MediaStoreScanner @Inject constructor(
             MediaStore.Images.Media.WIDTH,
             MediaStore.Images.Media.HEIGHT,
             MediaStore.Images.Media.DATA
-        )
+        ).apply {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                add(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
+                add(MediaStore.Images.Media.RELATIVE_PATH)
+            }
+        }.toTypedArray()
 
         val sortOrder = "${MediaStore.Images.Media.DATE_TAKEN} DESC"
 
@@ -58,7 +63,13 @@ class MediaStoreScanner @Inject constructor(
                 val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
                 val widthCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.WIDTH)
                 val heightCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.HEIGHT)
-                val dataCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
+                val dataCol = cursor.getColumnIndex(MediaStore.Images.Media.DATA)
+                val bucketCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
+                } else -1
+                val relativePathCol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    cursor.getColumnIndex(MediaStore.Images.Media.RELATIVE_PATH)
+                } else -1
 
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idCol)
@@ -70,18 +81,45 @@ class MediaStoreScanner @Inject constructor(
                     val size = cursor.getLong(sizeCol)
                     val width = cursor.getInt(widthCol)
                     val height = cursor.getInt(heightCol)
-                    val path = cursor.getString(dataCol) ?: ""
+                    val path = if (dataCol >= 0) cursor.getString(dataCol) ?: "" else ""
+                    val bucketName = if (bucketCol >= 0) cursor.getString(bucketCol) ?: "" else ""
+                    val relPath = if (relativePathCol >= 0) cursor.getString(relativePathCol) ?: "" else ""
 
                     val contentUri = ContentUris.withAppendedId(
                         MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                         id
                     )
 
+                    // Robust local folder & tag detection combining path, bucket name, and filename
+                    val combinedSearchStr = "$path $bucketName $relPath $name".lowercase()
+                    val (initialCategory, initialTags) = when {
+                        combinedSearchStr.contains("screenshot") -> 
+                            Pair(SceneCategory.SCREENSHOT, listOf("Screenshot", "Screen Capture"))
+                        combinedSearchStr.contains("whatsapp") || combinedSearchStr.contains("telegram") || combinedSearchStr.contains("messenger") -> 
+                            Pair(SceneCategory.PEOPLE, listOf("Social", "Messaging", "Friends"))
+                        combinedSearchStr.contains("selfie") || combinedSearchStr.contains("portrait") || combinedSearchStr.contains("face") -> 
+                            Pair(SceneCategory.PEOPLE, listOf("Selfie", "Portrait"))
+                        combinedSearchStr.contains("doc") || combinedSearchStr.contains("receipt") || combinedSearchStr.contains("invoice") || combinedSearchStr.contains("bill") || combinedSearchStr.contains("scan") || combinedSearchStr.contains("pdf") -> 
+                            Pair(SceneCategory.DOCUMENT, listOf("Document", "Receipt"))
+                        combinedSearchStr.contains("car") || combinedSearchStr.contains("bike") || combinedSearchStr.contains("vehicle") || combinedSearchStr.contains("motor") -> 
+                            Pair(SceneCategory.CARS, listOf("Vehicle", "Transport"))
+                        combinedSearchStr.contains("food") || combinedSearchStr.contains("meal") || combinedSearchStr.contains("dinner") || combinedSearchStr.contains("lunch") || combinedSearchStr.contains("breakfast") || combinedSearchStr.contains("restaurant") -> 
+                            Pair(SceneCategory.FOOD, listOf("Food", "Dining"))
+                        combinedSearchStr.contains("dog") || combinedSearchStr.contains("cat") || combinedSearchStr.contains("pet") || combinedSearchStr.contains("animal") -> 
+                            Pair(SceneCategory.PETS, listOf("Pet", "Animal"))
+                        combinedSearchStr.contains("sunset") || combinedSearchStr.contains("beach") || combinedSearchStr.contains("travel") || combinedSearchStr.contains("trip") || combinedSearchStr.contains("hotel") || combinedSearchStr.contains("tour") -> 
+                            Pair(SceneCategory.TRAVEL, listOf("Travel", "Vacation"))
+                        combinedSearchStr.contains("dcim") || combinedSearchStr.contains("camera") || combinedSearchStr.contains("nature") || combinedSearchStr.contains("mountain") || combinedSearchStr.contains("flower") || combinedSearchStr.contains("garden") -> 
+                            Pair(SceneCategory.NATURE, listOf("Camera", "Nature"))
+                        else -> 
+                            Pair(SceneCategory.NATURE, listOf("Photo", "Camera"))
+                    }
+
                     list.add(
                         MediaEntity(
                             id = id,
                             uriString = contentUri.toString(),
-                            path = path,
+                            path = if (path.isNotBlank()) path else "$relPath$name",
                             displayName = name,
                             mimeType = mime,
                             mediaType = MediaType.IMAGE,
@@ -89,7 +127,10 @@ class MediaStoreScanner @Inject constructor(
                             dateTaken = dateTaken,
                             sizeBytes = size,
                             width = width,
-                            height = height
+                            height = height,
+                            sceneCategory = initialCategory,
+                            aiTags = initialTags,
+                            isProcessedByAi = false
                         )
                     )
                 }

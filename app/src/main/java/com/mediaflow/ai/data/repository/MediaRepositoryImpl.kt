@@ -51,7 +51,18 @@ class MediaRepositoryImpl @Inject constructor(
     }
 
     override fun getMediaByCategory(category: SceneCategory): Flow<List<MediaItem>> {
-        return mediaDao.getMediaBySceneCategoryFlow(category).map { list ->
+        val keyword = when (category) {
+            SceneCategory.SCREENSHOT -> "screenshot"
+            SceneCategory.DOCUMENT -> "doc"
+            SceneCategory.PEOPLE -> "selfie"
+            SceneCategory.CARS -> "car"
+            SceneCategory.FOOD -> "food"
+            SceneCategory.PETS -> "pet"
+            SceneCategory.TRAVEL -> "travel"
+            SceneCategory.NATURE -> "camera"
+            else -> ""
+        }
+        return mediaDao.getMediaByCategoryOrKeywordFlow(category, keyword).map { list ->
             list.map { it.toDomainModel() }
         }.flowOn(Dispatchers.IO)
     }
@@ -96,21 +107,29 @@ class MediaRepositoryImpl @Inject constructor(
     override suspend fun refreshSmartAlbums() = withContext(Dispatchers.IO) {
         val totalFavorites = mediaDao.getFavoritesCount()
         val totalVideos = mediaDao.getVideosCount()
-        val totalNature = mediaDao.getCategoryCount(SceneCategory.NATURE)
-        val totalPeople = mediaDao.getCategoryCount(SceneCategory.PEOPLE)
-        val totalTravel = mediaDao.getCategoryCount(SceneCategory.TRAVEL)
-        val totalCars = mediaDao.getCategoryCount(SceneCategory.CARS)
-        val totalFood = mediaDao.getCategoryCount(SceneCategory.FOOD)
-        val totalDocs = mediaDao.getCategoryCount(SceneCategory.DOCUMENT)
-        val totalScreenshots = mediaDao.getCategoryCount(SceneCategory.SCREENSHOT)
+        val totalNature = mediaDao.getCategoryCountWithKeyword(SceneCategory.NATURE, "camera")
+        val totalPeople = mediaDao.getCategoryCountWithKeyword(SceneCategory.PEOPLE, "whatsapp")
+        val totalTravel = mediaDao.getCategoryCountWithKeyword(SceneCategory.TRAVEL, "travel")
+        val totalCars = mediaDao.getCategoryCountWithKeyword(SceneCategory.CARS, "car")
+        val totalFood = mediaDao.getCategoryCountWithKeyword(SceneCategory.FOOD, "food")
+        val totalDocs = mediaDao.getCategoryCountWithKeyword(SceneCategory.DOCUMENT, "doc")
+        val totalScreenshots = mediaDao.getCategoryCountWithKeyword(SceneCategory.SCREENSHOT, "screenshot")
+
+        val peopleCover = mediaDao.getCoverForCategory(SceneCategory.PEOPLE, "whatsapp")?.uriString
+        val travelCover = mediaDao.getCoverForCategory(SceneCategory.TRAVEL, "travel")?.uriString
+        val natureCover = mediaDao.getCoverForCategory(SceneCategory.NATURE, "camera")?.uriString
+        val carsCover = mediaDao.getCoverForCategory(SceneCategory.CARS, "car")?.uriString
+        val foodCover = mediaDao.getCoverForCategory(SceneCategory.FOOD, "food")?.uriString
+        val docsCover = mediaDao.getCoverForCategory(SceneCategory.DOCUMENT, "doc")?.uriString
+        val screenshotsCover = mediaDao.getCoverForCategory(SceneCategory.SCREENSHOT, "screenshot")?.uriString
 
         val updatedAlbums = listOf(
             AlbumEntity(
                 id = "smart_people",
                 title = "People & Pets",
                 type = SmartAlbumType.PEOPLE,
-                coverUriString = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80",
-                itemCount = maxOf(totalPeople, 142),
+                coverUriString = peopleCover ?: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80",
+                itemCount = totalPeople,
                 description = "Faces, portraits, and friends",
                 gradientStartHex = "#7C3AED",
                 gradientEndHex = "#C084FC"
@@ -119,8 +138,8 @@ class MediaRepositoryImpl @Inject constructor(
                 id = "smart_travel",
                 title = "Travel & Places",
                 type = SmartAlbumType.TRAVEL,
-                coverUriString = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80",
-                itemCount = maxOf(totalTravel, 89),
+                coverUriString = travelCover ?: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80",
+                itemCount = totalTravel,
                 description = "Beaches, resorts, vacations & landmarks",
                 gradientStartHex = "#2563EB",
                 gradientEndHex = "#60A5FA"
@@ -129,8 +148,8 @@ class MediaRepositoryImpl @Inject constructor(
                 id = "smart_nature",
                 title = "Nature & Mountains",
                 type = SmartAlbumType.NATURE,
-                coverUriString = "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&q=80",
-                itemCount = maxOf(totalNature, 215),
+                coverUriString = natureCover ?: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&q=80",
+                itemCount = totalNature,
                 description = "Forests, peaks, lakes, and landscapes",
                 gradientStartHex = "#059669",
                 gradientEndHex = "#34D399"
@@ -139,8 +158,8 @@ class MediaRepositoryImpl @Inject constructor(
                 id = "smart_cars",
                 title = "Cars & Vehicles",
                 type = SmartAlbumType.CARS,
-                coverUriString = "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=600&q=80",
-                itemCount = maxOf(totalCars, 48),
+                coverUriString = carsCover ?: "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=600&q=80",
+                itemCount = totalCars,
                 description = "Supercars, bikes, and automobiles",
                 gradientStartHex = "#DC2626",
                 gradientEndHex = "#F87171"
@@ -149,8 +168,8 @@ class MediaRepositoryImpl @Inject constructor(
                 id = "smart_food",
                 title = "Food & Dining",
                 type = SmartAlbumType.FOOD,
-                coverUriString = "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=600&q=80",
-                itemCount = maxOf(totalFood, 63),
+                coverUriString = foodCover ?: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=600&q=80",
+                itemCount = totalFood,
                 description = "Dishes, restaurants, and desserts",
                 gradientStartHex = "#D97706",
                 gradientEndHex = "#FBBF24"
@@ -159,8 +178,8 @@ class MediaRepositoryImpl @Inject constructor(
                 id = "smart_documents",
                 title = "Documents & Receipts",
                 type = SmartAlbumType.DOCUMENTS,
-                coverUriString = "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=600&q=80",
-                itemCount = maxOf(totalDocs, 37),
+                coverUriString = docsCover ?: "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=600&q=80",
+                itemCount = totalDocs,
                 description = "OCR indexed paper, passports, and bills",
                 gradientStartHex = "#475569",
                 gradientEndHex = "#94A3B8"
@@ -169,8 +188,8 @@ class MediaRepositoryImpl @Inject constructor(
                 id = "smart_screenshots",
                 title = "Screenshots",
                 type = SmartAlbumType.SCREENSHOTS,
-                coverUriString = "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=600&q=80",
-                itemCount = maxOf(totalScreenshots, 184),
+                coverUriString = screenshotsCover ?: "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=600&q=80",
+                itemCount = totalScreenshots,
                 description = "App screens, chats, and captures",
                 gradientStartHex = "#4F46E5",
                 gradientEndHex = "#818CF8"
@@ -180,7 +199,7 @@ class MediaRepositoryImpl @Inject constructor(
                 title = "Videos & Clips",
                 type = SmartAlbumType.VIDEOS,
                 coverUriString = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80",
-                itemCount = maxOf(totalVideos, 52),
+                itemCount = totalVideos,
                 description = "High framerate 4K and HD recordings",
                 gradientStartHex = "#9333EA",
                 gradientEndHex = "#C084FC"

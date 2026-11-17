@@ -25,8 +25,17 @@ import com.mediaflow.ai.ui.screens.settings.SettingsViewModel
 import com.mediaflow.ai.ui.theme.MediaFlowTheme
 import dagger.hilt.android.AndroidEntryPoint
 
+import androidx.lifecycle.lifecycleScope
+import com.mediaflow.ai.domain.usecase.SyncMediaStoreUseCase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var syncMediaStoreUseCase: SyncMediaStoreUseCase
 
     private val settingsViewModel: SettingsViewModel by viewModels()
 
@@ -36,6 +45,9 @@ class MainActivity : ComponentActivity() {
         val isGranted = permissions.values.any { it }
         if (isGranted) {
             startMediaObserverService()
+            lifecycleScope.launch(Dispatchers.IO) {
+                syncMediaStoreUseCase()
+            }
         }
     }
 
@@ -79,6 +91,9 @@ class MainActivity : ComponentActivity() {
 
         if (missingPermissions.isEmpty()) {
             startMediaObserverService()
+            lifecycleScope.launch(Dispatchers.IO) {
+                syncMediaStoreUseCase()
+            }
         } else {
             permissionLauncher.launch(missingPermissions.toTypedArray())
         }

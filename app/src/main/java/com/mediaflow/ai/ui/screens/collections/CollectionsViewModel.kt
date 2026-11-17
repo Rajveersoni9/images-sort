@@ -8,6 +8,7 @@ import com.mediaflow.ai.domain.model.SmartAlbum
 import com.mediaflow.ai.domain.model.SmartAlbumType
 import com.mediaflow.ai.domain.usecase.GetAlbumsUseCase
 import com.mediaflow.ai.domain.usecase.GetMediaUseCase
+import com.mediaflow.ai.domain.usecase.SyncMediaStoreUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,7 +32,8 @@ data class AlbumDetailUiState(
 @HiltViewModel
 class CollectionsViewModel @Inject constructor(
     private val getAlbumsUseCase: GetAlbumsUseCase,
-    private val getMediaUseCase: GetMediaUseCase
+    private val getMediaUseCase: GetMediaUseCase,
+    private val syncMediaStoreUseCase: SyncMediaStoreUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CollectionsUiState(isLoading = true))
@@ -42,6 +44,15 @@ class CollectionsViewModel @Inject constructor(
 
     init {
         loadAlbums()
+        refreshFromDevice()
+    }
+
+    fun refreshFromDevice() {
+        viewModelScope.launch {
+            try {
+                syncMediaStoreUseCase()
+            } catch (_: Exception) {}
+        }
     }
 
     private fun loadAlbums() {

@@ -40,7 +40,7 @@ class ImageClassifierEngine @Inject constructor(
         val lowerTags = tags.map { it.lowercase() }
         return when {
             lowerTags.any { it in listOf("dog", "cat", "pet", "puppy", "kitten") } -> SceneCategory.PETS
-            lowerTags.any { it in listOf("animal", "wildlife", "bird", "reptile") } -> SceneCategory.ANIMALS
+            lowerTags.any { it in listOf("animal", "wildlife", "bird", "reptile") } -> SceneCategory.PETS
             lowerTags.any { it in listOf("car", "vehicle", "automobile", "sports car", "motorcycle") } -> SceneCategory.CARS
             lowerTags.any { it in listOf("food", "meal", "dish", "cuisine", "dessert", "coffee") } -> SceneCategory.FOOD
             lowerTags.any { it in listOf("mountain", "tree", "forest", "nature", "sky", "flower", "lake", "ocean") } -> SceneCategory.NATURE
