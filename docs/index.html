@@ -580,10 +580,10 @@
         <div class="stats-strip">
             <div class="stat-item">
                 <span class="stat-label">Target Size</span>
-                <span id="statTargetSize" class="stat-value">17,233</span>
+                <span id="statTargetSize" class="stat-value">—</span>
             </div>
             <div class="stat-item">
-                <span class="stat-label">Photos</span>
+                <span class="stat-label">Photos sorted</span>
                 <span id="statPhotos" class="stat-value">0</span>
             </div>
             <div class="stat-item">
@@ -665,17 +665,22 @@
 
         <!-- Center Stage: 3D Photo Globe & Spotlight -->
         <div class="center-stage">
-            <h1 class="stage-title" id="stageHeadline">Claude is looking at <span class="serif">every photo.</span></h1>
-            <p class="stage-subtitle" id="stageSubline">Sorting into 11 smart folders in real time</p>
+            <h1 class="stage-title" id="stageHeadline">Ready to sort <span class="serif">your photos.</span></h1>
+            <p class="stage-subtitle" id="stageSubline">Click 'Sort Local Folder' or enter a path to organize your media</p>
 
             <div class="sphere-container">
                 <!-- 3D Rotating Sphere -->
                 <div class="sphere-world" id="sphereWorld"></div>
 
                 <!-- Center Active Spotlight Photo -->
-                <div class="spotlight-card" id="spotlightCard">
-                    <img id="spotlightImg" class="spotlight-img" src="" alt="Active">
-                    <div id="spotlightBadge" class="spotlight-badge">
+                <div class="spotlight-card" id="spotlightCard" onclick="openSortModal()" style="cursor: pointer;">
+                    <div id="spotlightPlaceholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; padding: 12px; color: #6B7280;">
+                        <i class="fa-solid fa-folder-open" style="font-size: 28px; color: #7C3AED; margin-bottom: 6px;"></i>
+                        <span style="font-size: 11px; font-weight: 700; color: #111827;">Select Folder</span>
+                        <span style="font-size: 10px; color: #9CA3AF; margin-top: 2px;">to start sorting</span>
+                    </div>
+                    <img id="spotlightImg" class="spotlight-img" src="" alt="Active" style="display: none;">
+                    <div id="spotlightBadge" class="spotlight-badge" style="display: none;">
                         <i class="fa-solid fa-wand-magic-sparkles"></i>
                         <span id="spotlightTag">Analyzing...</span>
                     </div>
@@ -715,32 +720,20 @@
             { id: "shopping", name: "Things & shopping", icon: "fa-bag-shopping", color: "#F59E0B", col: "right", count: 0, items: [] }
         ];
 
-        // Sample photos stream
-        const PHOTO_STREAM = [
-            { url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80", target: "selfies", tag: "Selfie", icon: "fa-camera" },
-            { url: "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=600&q=80", target: "events", tag: "Wedding Ceremony", icon: "fa-ring" },
-            { url: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80", target: "travel", tag: "Tropical Beach", icon: "fa-sun" },
-            { url: "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=600&q=80", target: "screenshots", tag: "App Code Screenshot", icon: "fa-code" },
-            { url: "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=600&q=80", target: "receipts", tag: "Passport / Doc", icon: "fa-file-invoice" },
-            { url: "https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=600&q=80", target: "animals", tag: "Golden Retriever", icon: "fa-dog" },
-            { url: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=600&q=80", target: "food", tag: "Gourmet Meal", icon: "fa-burger" },
-            { url: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&q=80", target: "nature", tag: "Alpine Mountains", icon: "fa-tree" },
-            { url: "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=600&q=80", target: "shopping", tag: "Red Sports Car", icon: "fa-car" },
-            { url: "https://images.unsplash.com/photo-1568602471122-7832951cc4c5?auto=format&fit=crop&w=600&q=80", target: "family", tag: "Friends Group", icon: "fa-heart" },
-            { url: "https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=600&q=80", target: "duplicates", tag: "Duplicate Photo", icon: "fa-clone" }
-        ];
-
-        let targetRemaining = 17233;
+        // Target remaining and live counters - start at 0 until user gives a folder
+        let targetRemaining = 0;
         let photosSorted = 0;
         let docsCount = 0;
         let dupsCount = 0;
         let isPaused = false;
-        let streamIndex = 0;
+        let realPhotos = [];
 
         // Render Folder Cards in Left and Right Columns
         function initFolderCards() {
             const colLeft = document.getElementById("colLeft");
             const colRight = document.getElementById("colRight");
+            colLeft.innerHTML = "";
+            colRight.innerHTML = "";
 
             FOLDERS.forEach(folder => {
                 const card = document.createElement("div");
@@ -775,11 +768,12 @@
             });
         }
 
-        // Generate Fibonacci Sphere 3D Cloud
+        // Generate Fibonacci Sphere 3D Cloud (Idle glowing nodes initially)
         function initSphere() {
             const world = document.getElementById("sphereWorld");
-            const numPoints = 85;
-            const radius = 175; // px
+            world.innerHTML = "";
+            const numPoints = 64;
+            const radius = 175;
 
             for (let i = 0; i < numPoints; i++) {
                 const phi = Math.acos(1 - 2 * (i + 0.5) / numPoints);
@@ -789,12 +783,27 @@
                 const y = radius * Math.sin(theta) * Math.sin(phi);
                 const z = radius * Math.cos(phi);
 
-                const img = document.createElement("img");
-                img.className = "globe-photo";
-                img.src = PHOTO_STREAM[i % PHOTO_STREAM.length].url;
+                const node = document.createElement("div");
+                node.className = "globe-photo";
+                node.id = `sphereNode_${i}`;
+                node.style.background = "linear-gradient(135deg, rgba(124, 58, 237, 0.45), rgba(37, 99, 235, 0.45))";
+                node.style.border = "1px solid rgba(255, 255, 255, 0.6)";
+                node.style.transform = `translate3d(${x + 200}px, ${y + 200}px, ${z}px)`;
+                world.appendChild(node);
+            }
+        }
 
-                img.style.transform = `translate3d(${x + 200}px, ${y + 200}px, ${z}px)`;
-                world.appendChild(img);
+        // Populate Sphere Nodes with actual user photos once folder is selected
+        function populateSphereWithUserPhotos(photoUrls) {
+            const numPoints = 64;
+            for (let i = 0; i < numPoints; i++) {
+                const node = document.getElementById(`sphereNode_${i}`);
+                if (node && photoUrls.length > 0) {
+                    const url = photoUrls[i % photoUrls.length];
+                    node.style.backgroundImage = `url('${url}')`;
+                    node.style.backgroundSize = "cover";
+                    node.style.backgroundPosition = "center";
+                }
             }
         }
 
@@ -895,13 +904,6 @@
             }, 750);
         }
 
-        function triggerNextSortingStep() {
-            if (isPaused) return;
-            const photo = PHOTO_STREAM[streamIndex % PHOTO_STREAM.length];
-            streamIndex++;
-            triggerFileSortAnimation(photo);
-        }
-
         function togglePause() {
             isPaused = !isPaused;
             const btn = document.getElementById("pauseBtn");
@@ -924,70 +926,121 @@
 
         async function selectAndSortLocalFolder() {
             if (!window.showDirectoryPicker) {
-                alert("Your browser does not support the File System Access API directly. Please use Chrome/Edge or type your folder path in the input box below.");
+                alert("Your browser does not support the File System Access API directly. Please use Chrome or Edge.");
                 return;
             }
             try {
                 const dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
                 closeSortModal();
-                
-                document.getElementById("stageHeadline").innerHTML = `Sorting local folder <span class="serif">${dirHandle.name}</span>`;
-                
-                // Create MediaFlow_Sorted folder inside
+
+                document.getElementById("stageHeadline").innerHTML = `Reading <span class="serif">${dirHandle.name}...</span>`;
+                document.getElementById("stageSubline").innerText = "Analyzing files and preparing 3D neural sorting...";
+
+                // Collect all media files first
+                const validFiles = [];
+                for await (const entry of dirHandle.values()) {
+                    if (entry.kind === "file") {
+                        const name = entry.name;
+                        const ext = name.slice((name.lastIndexOf(".") - 1 >>> 0) + 2).toLowerCase();
+                        if (['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov', 'heic', 'bmp'].includes(ext)) {
+                            validFiles.push(entry);
+                        }
+                    }
+                }
+
+                if (validFiles.length === 0) {
+                    alert(`No photos or videos found in "${dirHandle.name}". Please select a folder with images.`);
+                    return;
+                }
+
+                // Update UI state with real counts
+                targetRemaining = validFiles.length;
+                photosSorted = 0;
+                docsCount = 0;
+                dupsCount = 0;
+                document.getElementById("statTargetSize").innerText = targetRemaining.toLocaleString();
+                document.getElementById("statPhotos").innerText = "0";
+                document.getElementById("statDocs").innerText = "0";
+                document.getElementById("statDuplicates").innerText = "0";
+
+                // Show active spotlight
+                const placeholder = document.getElementById("spotlightPlaceholder");
+                const spotlightImg = document.getElementById("spotlightImg");
+                const spotlightBadge = document.getElementById("spotlightBadge");
+                if (placeholder) placeholder.style.display = "none";
+                if (spotlightImg) spotlightImg.style.display = "block";
+                if (spotlightBadge) spotlightBadge.style.display = "flex";
+
+                // Create destination folder on user machine
                 const sortedHandle = await dirHandle.getDirectoryHandle("MediaFlow_Sorted", { create: true });
-                
-                // Create target subfolders
                 const folderHandles = {};
                 for (const f of FOLDERS) {
                     const cleanName = f.name.replace(/[^a-zA-Z0-9]/g, "_");
                     folderHandles[f.id] = await sortedHandle.getDirectoryHandle(cleanName, { create: true });
                 }
-                
-                let sortedTotal = 0;
-                for await (const entry of dirHandle.values()) {
-                    if (entry.kind === "file") {
-                        const name = entry.name;
-                        const ext = name.slice((name.lastIndexOf(".") - 1 >>> 0) + 2).toLowerCase();
-                        if (['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov', 'heic'].includes(ext)) {
-                            sortedTotal++;
-                            const file = await entry.getFile();
-                            const objectUrl = URL.createObjectURL(file);
-                            
-                            // Categorize based on metadata & name
-                            const lower = name.toLowerCase();
-                            let targetId = "nature";
-                            if (lower.includes("screen")) targetId = "screenshots";
-                            else if (lower.includes("selfie") || lower.includes("portrait") || lower.includes("face")) targetId = "selfies";
-                            else if (lower.includes("receipt") || lower.includes("doc") || lower.includes("bill") || lower.includes("pdf")) targetId = "receipts";
-                            else if (lower.includes("food") || lower.includes("dinner") || lower.includes("meal")) targetId = "food";
-                            else if (lower.includes("pet") || lower.includes("dog") || lower.includes("cat")) targetId = "animals";
-                            else if (lower.includes("trip") || lower.includes("beach") || lower.includes("travel")) targetId = "travel";
-                            else if (lower.includes("dup") || lower.includes("copy")) targetId = "duplicates";
-                            else if (lower.includes("family") || lower.includes("friend")) targetId = "family";
-                            else if (lower.includes("event") || lower.includes("wedding") || lower.includes("party")) targetId = "events";
-                            else if (lower.includes("car") || lower.includes("bike") || lower.includes("item") || lower.includes("shop")) targetId = "shopping";
 
-                            // Copy file directly to destination subfolder on local machine
-                            const destSub = folderHandles[targetId];
-                            if (destSub) {
-                                const newHandle = await destSub.getFileHandle(name, { create: true });
-                                const writable = await newHandle.createWritable();
-                                await writable.write(file);
-                                await writable.close();
-                            }
-
-                            // Trigger visual flight to target folder card
-                            triggerFileSortAnimation({ url: objectUrl, target: targetId, name: name });
-                            await new Promise(r => setTimeout(r, 650));
-                        }
-                    }
+                // Pre-populate 3D sphere with first batch of user photos
+                const previewUrls = [];
+                for (let i = 0; i < Math.min(validFiles.length, 25); i++) {
+                    try {
+                        const f = await validFiles[i].getFile();
+                        previewUrls.push(URL.createObjectURL(f));
+                    } catch (_) {}
                 }
-                document.getElementById("stageHeadline").innerHTML = `✓ Completed! <span class="serif">${sortedTotal} items organized</span>`;
-                alert(`✓ Done! Successfully sorted ${sortedTotal} photos and saved them on your computer under:\n${dirHandle.name}/MediaFlow_Sorted/`);
+                if (previewUrls.length > 0) {
+                    populateSphereWithUserPhotos(previewUrls);
+                }
+
+                document.getElementById("stageHeadline").innerHTML = `Sorting <span class="serif">${dirHandle.name}</span>`;
+                document.getElementById("stageSubline").innerText = `Organizing ${validFiles.length} items into 11 categories on your machine`;
+
+                // Process and animate each user file
+                for (let i = 0; i < validFiles.length; i++) {
+                    while (isPaused) {
+                        await new Promise(r => setTimeout(r, 200));
+                    }
+
+                    const entry = validFiles[i];
+                    const name = entry.name;
+                    const file = await entry.getFile();
+                    const objectUrl = URL.createObjectURL(file);
+
+                    // Categorize
+                    const lower = name.toLowerCase();
+                    let targetId = "nature";
+                    let tag = "Nature & View";
+                    if (lower.includes("screen")) { targetId = "screenshots"; tag = "Screenshot"; }
+                    else if (lower.includes("selfie") || lower.includes("portrait") || lower.includes("face")) { targetId = "selfies"; tag = "Selfie"; }
+                    else if (lower.includes("receipt") || lower.includes("doc") || lower.includes("bill") || lower.includes("pdf") || lower.includes("invoice")) { targetId = "receipts"; tag = "Document"; }
+                    else if (lower.includes("food") || lower.includes("dinner") || lower.includes("meal") || lower.includes("snack") || lower.includes("burger")) { targetId = "food"; tag = "Food"; }
+                    else if (lower.includes("pet") || lower.includes("dog") || lower.includes("cat") || lower.includes("animal")) { targetId = "animals"; tag = "Animal & Pet"; }
+                    else if (lower.includes("trip") || lower.includes("beach") || lower.includes("travel") || lower.includes("vacation") || lower.includes("hotel")) { targetId = "travel"; tag = "Travel"; }
+                    else if (lower.includes("dup") || lower.includes("copy") || lower.includes("(1)")) { targetId = "duplicates"; tag = "Duplicate"; }
+                    else if (lower.includes("family") || lower.includes("friend") || lower.includes("group") || lower.includes("whatsapp")) { targetId = "family"; tag = "Family & Friends"; }
+                    else if (lower.includes("event") || lower.includes("wedding") || lower.includes("party") || lower.includes("birthday")) { targetId = "events"; tag = "Event & Wedding"; }
+                    else if (lower.includes("car") || lower.includes("bike") || lower.includes("item") || lower.includes("shop") || lower.includes("vehicle")) { targetId = "shopping"; tag = "Things & Shopping"; }
+
+                    // Save directly to disk in appropriate subfolder
+                    const destSub = folderHandles[targetId];
+                    if (destSub) {
+                        const newHandle = await destSub.getFileHandle(name, { create: true });
+                        const writable = await newHandle.createWritable();
+                        await writable.write(file);
+                        await writable.close();
+                    }
+
+                    // Animate trajectory vector ray, spotlight, and flying photo
+                    triggerFileSortAnimation({ url: objectUrl, target: targetId, tag: tag, name: name });
+                    await new Promise(r => setTimeout(r, 700));
+                }
+
+                document.getElementById("stageHeadline").innerHTML = `✓ Completed! <span class="serif">${validFiles.length} photos sorted</span>`;
+                document.getElementById("stageSubline").innerText = `All files saved to ${dirHandle.name}/MediaFlow_Sorted/`;
+                alert(`✓ Done! Successfully sorted ${validFiles.length} photos and saved them on your computer under:\n${dirHandle.name}/MediaFlow_Sorted/`);
             } catch (err) {
                 if (err.name !== 'AbortError') {
                     console.error(err);
-                    alert("Folder access: " + err.message);
+                    alert("Folder access error: " + err.message);
                 }
             }
         }
@@ -1028,11 +1081,10 @@
             }
         }
 
-        // Initialize application on load
+        // Initialize application on load - Waiting for user path/folder
         window.addEventListener("DOMContentLoaded", () => {
             initFolderCards();
             initSphere();
-            setInterval(triggerNextSortingStep, 1100);
         });
     </script>
 </body>
