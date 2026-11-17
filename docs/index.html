@@ -799,11 +799,8 @@
         }
 
         // Flying Particle Animation Pipeline
-        function triggerNextSortingStep() {
-            if (isPaused) return;
-
-            const photo = PHOTO_STREAM[streamIndex % PHOTO_STREAM.length];
-            streamIndex++;
+        function triggerFileSortAnimation(photo) {
+            if (!photo || !photo.url) return;
 
             // 1. Spotlight Active Photo in Center
             const spotlight = document.getElementById("spotlightCard");
@@ -811,11 +808,15 @@
             const spotlightTag = document.getElementById("spotlightTag");
 
             spotlightImg.src = photo.url;
-            spotlightTag.innerText = photo.tag;
+            if (spotlightTag) {
+                spotlightTag.innerText = photo.tag || photo.name || "AI Classified";
+            }
 
             // 2. Dotted Ray Trajectory to Target Folder
-            const targetFolder = FOLDERS.find(f => f.id === photo.target);
-            const targetCard = document.getElementById(`card_${photo.target}`);
+            const targetFolder = FOLDERS.find(f => f.id === photo.target) || FOLDERS[0];
+            const targetCard = document.getElementById(`card_${targetFolder.id}`);
+            if (!spotlight || !targetCard) return;
+
             const centerRect = spotlight.getBoundingClientRect();
             const targetRect = targetCard.getBoundingClientRect();
 
@@ -825,11 +826,13 @@
             const endY = targetRect.top + targetRect.height / 2;
 
             const trajLine = document.getElementById("trajLine");
-            trajLine.setAttribute("x1", startX);
-            trajLine.setAttribute("y1", startY);
-            trajLine.setAttribute("x2", endX);
-            trajLine.setAttribute("y2", endY);
-            trajLine.style.display = "block";
+            if (trajLine) {
+                trajLine.setAttribute("x1", startX);
+                trajLine.setAttribute("y1", startY);
+                trajLine.setAttribute("x2", endX);
+                trajLine.setAttribute("y2", endY);
+                trajLine.style.display = "block";
+            }
 
             // 3. Create Flying Photo Particle
             const flying = document.createElement("img");
@@ -851,7 +854,7 @@
             // 4. Land in Folder Card
             setTimeout(() => {
                 flying.remove();
-                trajLine.style.display = "none";
+                if (trajLine) trajLine.style.display = "none";
 
                 // Card Absorption Pulse
                 targetCard.classList.add("pulse");
@@ -859,7 +862,8 @@
 
                 // Insert into mini-grid slot
                 targetFolder.count++;
-                document.getElementById(`count_${targetFolder.id}`).innerText = targetFolder.count;
+                const countEl = document.getElementById(`count_${targetFolder.id}`);
+                if (countEl) countEl.innerText = targetFolder.count;
 
                 const slotIdx = (targetFolder.count - 1) % 18;
                 const slot = document.getElementById(`slot_${targetFolder.id}_${slotIdx}`);
@@ -873,17 +877,29 @@
                 if (photo.target === "screenshots" || photo.target === "receipts") docsCount++;
                 if (photo.target === "duplicates") dupsCount++;
 
-                document.getElementById("statTargetSize").innerText = targetRemaining.toLocaleString();
-                document.getElementById("statPhotos").innerText = photosSorted.toLocaleString();
-                document.getElementById("statDocs").innerText = docsCount.toLocaleString();
-                document.getElementById("statDuplicates").innerText = dupsCount.toLocaleString();
+                const statTargetEl = document.getElementById("statTargetSize");
+                if (statTargetEl) statTargetEl.innerText = targetRemaining.toLocaleString();
+                const statPhotosEl = document.getElementById("statPhotos");
+                if (statPhotosEl) statPhotosEl.innerText = photosSorted.toLocaleString();
+                const statDocsEl = document.getElementById("statDocs");
+                if (statDocsEl) statDocsEl.innerText = docsCount.toLocaleString();
+                const statDupEl = document.getElementById("statDuplicates");
+                if (statDupEl) statDupEl.innerText = dupsCount.toLocaleString();
 
-                // Dynamic Header Title
                 if (photosSorted % 5 === 0) {
-                    document.getElementById("stageHeadline").innerHTML = `Sorting into 11 <span class="serif">folders.</span>`;
+                    const headline = document.getElementById("stageHeadline");
+                    if (headline && !headline.innerText.includes("Sorting local")) {
+                        headline.innerHTML = `Sorting into 11 <span class="serif">folders.</span>`;
+                    }
                 }
-
             }, 750);
+        }
+
+        function triggerNextSortingStep() {
+            if (isPaused) return;
+            const photo = PHOTO_STREAM[streamIndex % PHOTO_STREAM.length];
+            streamIndex++;
+            triggerFileSortAnimation(photo);
         }
 
         function togglePause() {
