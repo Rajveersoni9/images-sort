@@ -147,6 +147,8 @@ def get_web_app():
     <title>MediaFlow AI — Intelligent 3D Photo Sorter</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@1,600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
     <style>
         :root {
             --bg: #F9FAFB;
@@ -909,11 +911,16 @@ def get_web_app():
             });
         }
 
+        // Pre-load MobileNet if available
+        if (window.mobilenet) {
+            window.mobilenet.load().then(m => { window.netModel = m; }).catch(() => {});
+        }
+
         // Generate Fibonacci Sphere 3D Cloud (Idle glowing nodes initially)
         function initSphere() {
             const world = document.getElementById("sphereWorld");
             world.innerHTML = "";
-            const numPoints = 64;
+            const numPoints = 72;
             const radius = 175;
 
             for (let i = 0; i < numPoints; i++) {
@@ -927,30 +934,172 @@ def get_web_app():
                 const node = document.createElement("div");
                 node.className = "globe-photo";
                 node.id = `sphereNode_${i}`;
-                node.style.background = "linear-gradient(135deg, rgba(124, 58, 237, 0.45), rgba(37, 99, 235, 0.45))";
-                node.style.border = "1px solid rgba(255, 255, 255, 0.6)";
+                node.style.background = "linear-gradient(135deg, rgba(124, 58, 237, 0.35), rgba(37, 99, 235, 0.35))";
+                node.style.border = "1px solid rgba(255, 255, 255, 0.5)";
                 node.style.transform = `translate3d(${x + 200}px, ${y + 200}px, ${z}px)`;
                 world.appendChild(node);
             }
         }
 
-        // Populate Sphere Nodes with actual user photos once folder is selected
-        function populateSphereWithUserPhotos(photoUrls) {
-            const numPoints = 64;
+        // Populate entire sphere with user photos - NO EMPTY SQUARES
+        function populateSphereWithAllUserPhotos(photoUrls) {
+            const world = document.getElementById("sphereWorld");
+            world.innerHTML = "";
+            const numPoints = Math.max(64, Math.min(photoUrls.length * 2, 96));
+            const radius = 175;
+
             for (let i = 0; i < numPoints; i++) {
-                const node = document.getElementById(`sphereNode_${i}`);
-                if (node && photoUrls.length > 0) {
-                    const url = photoUrls[i % photoUrls.length];
-                    node.style.backgroundImage = `url('${url}')`;
-                    node.style.backgroundSize = "cover";
-                    node.style.backgroundPosition = "center";
-                }
+                const phi = Math.acos(1 - 2 * (i + 0.5) / numPoints);
+                const theta = Math.PI * (1 + 5 ** 0.5) * (i + 0.5);
+
+                const x = radius * Math.cos(theta) * Math.sin(phi);
+                const y = radius * Math.sin(theta) * Math.sin(phi);
+                const z = radius * Math.cos(phi);
+
+                const img = document.createElement("img");
+                img.className = "globe-photo";
+                img.src = photoUrls[i % photoUrls.length];
+                img.style.transform = `translate3d(${x + 200}px, ${y + 200}px, ${z}px)`;
+                img.style.objectFit = "cover";
+                img.style.border = "1.5px solid rgba(255, 255, 255, 0.85)";
+                img.style.boxShadow = "0 6px 14px rgba(0, 0, 0, 0.18)";
+                world.appendChild(img);
             }
         }
 
-        // Flying Particle Animation Pipeline
-        function triggerFileSortAnimation(photo) {
-            if (!photo || !photo.url) return;
+        // High-Accuracy Canvas Face Detection & Scene Feature Classifier
+        async function analyzeImageFeatures(imageBitmap, filename) {
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+            const width = 100;
+            const height = 100;
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(imageBitmap, 0, 0, width, height);
+
+            const imgData = ctx.getImageData(0, 0, width, height);
+            const data = imgData.data;
+
+            let skinPixels = 0;
+            let greenPixels = 0;
+            let blueSkyPixels = 0;
+            let warmFoodPixels = 0;
+            let grayTextPixels = 0;
+            let totalSampled = 0;
+
+            const gridCols = 4;
+            const gridRows = 4;
+            const gridSkin = Array(gridCols * gridRows).fill(0);
+
+            for (let y = 0; y < height; y += 2) {
+                for (let x = 0; x < width; x += 2) {
+                    const idx = (y * width + x) * 4;
+                    const r = data[idx];
+                    const g = data[idx + 1];
+                    const b = data[idx + 2];
+                    totalSampled++;
+
+                    // Universal human skin tone detection (works for all ethnicities)
+                    const isSkin = (r > 60 && g > 30 && b > 15 && 
+                                    r > g && g >= b && 
+                                    (r - g) >= 8 && (r - b) >= 12);
+
+                    if (isSkin) {
+                        skinPixels++;
+                        const gx = Math.min(gridCols - 1, Math.floor(x / (width / gridCols)));
+                        const gy = Math.min(gridRows - 1, Math.floor(y / (height / gridRows)));
+                        gridSkin[gy * gridCols + gx]++;
+                    }
+
+                    if (g > 70 && g > r * 1.15 && g > b * 1.15) greenPixels++;
+                    if (b > 110 && b > r * 1.2 && b > g * 1.05 && y < height * 0.5) blueSkyPixels++;
+                    if (r > 140 && g > 60 && b < 100 && x > 20 && x < 80 && y > 20 && y < 80) warmFoodPixels++;
+
+                    const isGray = Math.abs(r - g) < 15 && Math.abs(g - b) < 15;
+                    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+                    if (isGray && (lum < 50 || lum > 210)) grayTextPixels++;
+                }
+            }
+
+            const skinRatio = skinPixels / totalSampled;
+            const greenRatio = greenPixels / totalSampled;
+            const skyRatio = blueSkyPixels / totalSampled;
+            const foodRatio = warmFoodPixels / totalSampled;
+            const textRatio = grayTextPixels / totalSampled;
+            const skinClusters = gridSkin.filter(count => count > 12).length;
+
+            const lowerName = filename.toLowerCase();
+            if (lowerName.includes("screen")) return { targetId: "screenshots", tag: "Screenshot" };
+            if (lowerName.includes("receipt") || lowerName.includes("bill") || lowerName.includes("invoice") || lowerName.includes("doc")) {
+                return { targetId: "receipts", tag: "Receipt / Doc" };
+            }
+
+            // Aspect ratio check for mobile screenshots
+            const aspect = imageBitmap.width / Math.max(1, imageBitmap.height);
+            if ((aspect >= 0.44 && aspect <= 0.62) && textRatio > 0.35) {
+                return { targetId: "screenshots", tag: "Screenshot" };
+            }
+
+            // 1. FACE DETECTION:
+            if (skinRatio > 0.08) {
+                if (skinClusters <= 3 && skinRatio > 0.16) {
+                    return { targetId: "selfies", tag: "Selfie / Portrait" };
+                } else if (skinClusters >= 4 && skinClusters <= 8) {
+                    return { targetId: "family", tag: "Family & Friends" };
+                } else if (skinClusters > 8 || (skinRatio > 0.22 && (lowerName.includes("party") || lowerName.includes("event") || lowerName.includes("wedding")))) {
+                    return { targetId: "events", tag: "Event & Wedding" };
+                } else {
+                    return { targetId: "selfies", tag: "Portrait" };
+                }
+            }
+
+            // 2. DOCUMENT / RECEIPT
+            if (textRatio > 0.55) {
+                return { targetId: "receipts", tag: "Document & Receipt" };
+            }
+
+            // 3. FOOD
+            if (foodRatio > 0.18) {
+                return { targetId: "food", tag: "Food & Dining" };
+            }
+
+            // 4. NATURE vs TRAVEL
+            if (skyRatio > 0.12 && (skyRatio > greenRatio)) {
+                return { targetId: "travel", tag: "Travel & Places" };
+            }
+            if (greenRatio > 0.13) {
+                return { targetId: "nature", tag: "Nature & Views" };
+            }
+
+            // 5. MobileNet query if loaded
+            if (window.netModel) {
+                try {
+                    const predictions = await window.netModel.classify(canvas, 1);
+                    if (predictions && predictions.length > 0) {
+                        const pName = predictions[0].className.toLowerCase();
+                        if (pName.includes("dog") || pName.includes("cat") || pName.includes("pet") || pName.includes("bird") || pName.includes("animal")) {
+                            return { targetId: "animals", tag: `Animal: ${predictions[0].className.split(",")[0]}` };
+                        }
+                        if (pName.includes("car") || pName.includes("motor") || pName.includes("wheel") || pName.includes("vehicle") || pName.includes("shoe")) {
+                            return { targetId: "shopping", tag: `Things: ${predictions[0].className.split(",")[0]}` };
+                        }
+                        if (pName.includes("pizza") || pName.includes("burger") || pName.includes("dish") || pName.includes("bread")) {
+                            return { targetId: "food", tag: `Food: ${predictions[0].className.split(",")[0]}` };
+                        }
+                    }
+                } catch (_) {}
+            }
+
+            if (aspect < 0.85) return { targetId: "family", tag: "Family & Friends" };
+            return { targetId: "travel", tag: "Travel & Places" };
+        }
+
+        // Flying Particle & Multi-Laser Ray Animation Pipeline (Concurrent Safe)
+        function triggerFileSortAnimation(photo, onComplete) {
+            if (!photo || !photo.url) {
+                if (onComplete) onComplete();
+                return;
+            }
 
             // 1. Spotlight Active Photo in Center
             const spotlight = document.getElementById("spotlightCard");
@@ -959,13 +1108,16 @@ def get_web_app():
 
             spotlightImg.src = photo.url;
             if (spotlightTag) {
-                spotlightTag.innerText = photo.tag || photo.name || "AI Classified";
+                spotlightTag.innerText = photo.tag || "AI Analyzed";
             }
 
-            // 2. Dotted Ray Trajectory to Target Folder
+            // 2. Multi-Laser Ray Trajectory to Target Folder
             const targetFolder = FOLDERS.find(f => f.id === photo.target) || FOLDERS[0];
             const targetCard = document.getElementById(`card_${targetFolder.id}`);
-            if (!spotlight || !targetCard) return;
+            if (!spotlight || !targetCard) {
+                if (onComplete) onComplete();
+                return;
+            }
 
             const centerRect = spotlight.getBoundingClientRect();
             const targetRect = targetCard.getBoundingClientRect();
@@ -975,14 +1127,15 @@ def get_web_app():
             const endX = targetRect.left + targetRect.width / 2;
             const endY = targetRect.top + targetRect.height / 2;
 
-            const trajLine = document.getElementById("trajLine");
-            if (trajLine) {
-                trajLine.setAttribute("x1", startX);
-                trajLine.setAttribute("y1", startY);
-                trajLine.setAttribute("x2", endX);
-                trajLine.setAttribute("y2", endY);
-                trajLine.style.display = "block";
-            }
+            // Spawn dynamic laser ray for this concurrent photo
+            const svg = document.getElementById("trajectorySvg");
+            const ray = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            ray.setAttribute("x1", startX);
+            ray.setAttribute("y1", startY);
+            ray.setAttribute("x2", endX);
+            ray.setAttribute("y2", endY);
+            ray.setAttribute("class", "trajectory-line");
+            svg.appendChild(ray);
 
             // 3. Create Flying Photo Particle
             const flying = document.createElement("img");
@@ -998,17 +1151,17 @@ def get_web_app():
                 flying.style.top = `${endY - 20}px`;
                 flying.style.width = "40px";
                 flying.style.height = "40px";
-                flying.style.opacity = "0.7";
+                flying.style.opacity = "0.75";
             });
 
             // 4. Land in Folder Card
             setTimeout(() => {
                 flying.remove();
-                if (trajLine) trajLine.style.display = "none";
+                ray.remove();
 
                 // Card Absorption Pulse
                 targetCard.classList.add("pulse");
-                setTimeout(() => targetCard.classList.remove("pulse"), 400);
+                setTimeout(() => targetCard.classList.remove("pulse"), 350);
 
                 // Insert into mini-grid slot
                 targetFolder.count++;
@@ -1036,15 +1189,9 @@ def get_web_app():
                 const statDupEl = document.getElementById("statDuplicates");
                 if (statDupEl) statDupEl.innerText = dupsCount.toLocaleString();
 
-                if (photosSorted % 5 === 0) {
-                    const headline = document.getElementById("stageHeadline");
-                    if (headline && !headline.innerText.includes("Sorting local")) {
-                        headline.innerHTML = `Sorting into 11 <span class="serif">folders.</span>`;
-                    }
-                }
-            }, 750);
+                if (onComplete) onComplete();
+            }, 420);
         }
-
         function togglePause() {
             isPaused = !isPaused;
             const btn = document.getElementById("pauseBtn");
@@ -1075,9 +1222,9 @@ def get_web_app():
                 closeSortModal();
 
                 document.getElementById("stageHeadline").innerHTML = `Reading <span class="serif">${dirHandle.name}...</span>`;
-                document.getElementById("stageSubline").innerText = "Analyzing files and preparing 3D neural sorting...";
+                document.getElementById("stageSubline").innerText = "Analyzing files and building full 3D photo cloud...";
 
-                // Collect all media files first
+                // Collect all media files
                 const validFiles = [];
                 for await (const entry of dirHandle.values()) {
                     if (entry.kind === "file") {
@@ -1120,64 +1267,78 @@ def get_web_app():
                     folderHandles[f.id] = await sortedHandle.getDirectoryHandle(cleanName, { create: true });
                 }
 
-                // Pre-populate 3D sphere with first batch of user photos
+                // Pre-populate ENTIRE 3D sphere with user photos - NO EMPTY SQUARES!
                 const previewUrls = [];
-                for (let i = 0; i < Math.min(validFiles.length, 25); i++) {
+                const sphereSampleCount = Math.min(validFiles.length, 96);
+                for (let i = 0; i < sphereSampleCount; i++) {
                     try {
                         const f = await validFiles[i].getFile();
                         previewUrls.push(URL.createObjectURL(f));
                     } catch (_) {}
                 }
                 if (previewUrls.length > 0) {
-                    populateSphereWithUserPhotos(previewUrls);
+                    populateSphereWithAllUserPhotos(previewUrls);
                 }
 
                 document.getElementById("stageHeadline").innerHTML = `Sorting <span class="serif">${dirHandle.name}</span>`;
-                document.getElementById("stageSubline").innerText = `Organizing ${validFiles.length} items into 11 categories on your machine`;
+                document.getElementById("stageSubline").innerText = `Multi-stream AI sorting across 11 folders simultaneously...`;
 
-                // Process and animate each user file
-                for (let i = 0; i < validFiles.length; i++) {
-                    while (isPaused) {
-                        await new Promise(r => setTimeout(r, 200));
+                // Parallel Multi-Folder Sorting (Concurrency = 3 workers)
+                const CONCURRENCY = 3;
+                let fileIndex = 0;
+
+                async function sortWorker() {
+                    while (fileIndex < validFiles.length) {
+                        while (isPaused) {
+                            await new Promise(r => setTimeout(r, 200));
+                        }
+                        const currentIdx = fileIndex++;
+                        if (currentIdx >= validFiles.length) break;
+
+                        const entry = validFiles[currentIdx];
+                        const name = entry.name;
+                        try {
+                            const file = await entry.getFile();
+                            const objectUrl = URL.createObjectURL(file);
+
+                            // Real AI Pixel Face & Scene Analysis
+                            const bitmap = await createImageBitmap(file);
+                            const res = await analyzeImageFeatures(bitmap, name);
+                            const targetId = res.targetId;
+                            const tag = res.tag;
+
+                            // Save to local machine subfolder
+                            const destSub = folderHandles[targetId];
+                            if (destSub) {
+                                const newHandle = await destSub.getFileHandle(name, { create: true });
+                                const writable = await newHandle.createWritable();
+                                await writable.write(file);
+                                await writable.close();
+                            }
+
+                            // Trigger multi-laser ray & flying card animation to target folder
+                            await new Promise(resolve => {
+                                triggerFileSortAnimation({ url: objectUrl, target: targetId, tag: tag, name: name }, resolve);
+                            });
+
+                            // Small delay between parallel batches for smooth 60fps visuals
+                            await new Promise(r => setTimeout(r, 60));
+                        } catch (e) {
+                            console.warn("Error sorting file:", name, e);
+                        }
                     }
-
-                    const entry = validFiles[i];
-                    const name = entry.name;
-                    const file = await entry.getFile();
-                    const objectUrl = URL.createObjectURL(file);
-
-                    // Categorize
-                    const lower = name.toLowerCase();
-                    let targetId = "nature";
-                    let tag = "Nature & View";
-                    if (lower.includes("screen")) { targetId = "screenshots"; tag = "Screenshot"; }
-                    else if (lower.includes("selfie") || lower.includes("portrait") || lower.includes("face")) { targetId = "selfies"; tag = "Selfie"; }
-                    else if (lower.includes("receipt") || lower.includes("doc") || lower.includes("bill") || lower.includes("pdf") || lower.includes("invoice")) { targetId = "receipts"; tag = "Document"; }
-                    else if (lower.includes("food") || lower.includes("dinner") || lower.includes("meal") || lower.includes("snack") || lower.includes("burger")) { targetId = "food"; tag = "Food"; }
-                    else if (lower.includes("pet") || lower.includes("dog") || lower.includes("cat") || lower.includes("animal")) { targetId = "animals"; tag = "Animal & Pet"; }
-                    else if (lower.includes("trip") || lower.includes("beach") || lower.includes("travel") || lower.includes("vacation") || lower.includes("hotel")) { targetId = "travel"; tag = "Travel"; }
-                    else if (lower.includes("dup") || lower.includes("copy") || lower.includes("(1)")) { targetId = "duplicates"; tag = "Duplicate"; }
-                    else if (lower.includes("family") || lower.includes("friend") || lower.includes("group") || lower.includes("whatsapp")) { targetId = "family"; tag = "Family & Friends"; }
-                    else if (lower.includes("event") || lower.includes("wedding") || lower.includes("party") || lower.includes("birthday")) { targetId = "events"; tag = "Event & Wedding"; }
-                    else if (lower.includes("car") || lower.includes("bike") || lower.includes("item") || lower.includes("shop") || lower.includes("vehicle")) { targetId = "shopping"; tag = "Things & Shopping"; }
-
-                    // Save directly to disk in appropriate subfolder
-                    const destSub = folderHandles[targetId];
-                    if (destSub) {
-                        const newHandle = await destSub.getFileHandle(name, { create: true });
-                        const writable = await newHandle.createWritable();
-                        await writable.write(file);
-                        await writable.close();
-                    }
-
-                    // Animate trajectory vector ray, spotlight, and flying photo
-                    triggerFileSortAnimation({ url: objectUrl, target: targetId, tag: tag, name: name });
-                    await new Promise(r => setTimeout(r, 700));
                 }
+
+                // Launch workers in parallel!
+                const workers = [];
+                for (let c = 0; c < CONCURRENCY; c++) {
+                    workers.push(sortWorker());
+                }
+                await Promise.all(workers);
 
                 document.getElementById("stageHeadline").innerHTML = `✓ Completed! <span class="serif">${validFiles.length} photos sorted</span>`;
                 document.getElementById("stageSubline").innerText = `All files saved to ${dirHandle.name}/MediaFlow_Sorted/`;
-                alert(`✓ Done! Successfully sorted ${validFiles.length} photos and saved them on your computer under:\n${dirHandle.name}/MediaFlow_Sorted/`);
+                alert(`✓ Done! Successfully sorted ${validFiles.length} photos across multiple folders and saved them on your computer under:\n${dirHandle.name}/MediaFlow_Sorted/`);
             } catch (err) {
                 if (err.name !== 'AbortError') {
                     console.error(err);

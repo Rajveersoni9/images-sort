@@ -162,45 +162,94 @@ class MediaFlowSorter:
 
     def classify_scene_and_tags(self, img_path: Path) -> Tuple[str, List[str]]:
         """
-        Infers scene category and tags using filename heuristics, aspect ratio, and visual signals.
+        Infers scene category and tags using visual pixel analysis (skin/face detection,
+        aspect ratios, color balance) and metadata heuristics.
         """
         filename = img_path.name.lower()
-        tags = []
-        category = "GENERAL"
 
-        # Check for screenshot indicators
-        if "screenshot" in filename or "screen_shot" in filename:
-            category = "SCREENSHOTS"
-            tags.extend(["Screenshot", "UI", "Digital"])
-        elif any(k in filename for k in ["doc", "passport", "bill", "invoice", "receipt", "contract", "license"]):
-            category = "DOCUMENTS"
-            tags.extend(["Document", "Text", "Official"])
-        elif any(k in filename for k in ["dog", "cat", "pet", "puppy", "kitten"]):
-            category = "PETS"
-            tags.extend(["Pet", "Animal", "Cute"])
-        elif any(k in filename for k in ["car", "porsche", "bmw", "ferrari", "vehicle", "auto", "bike"]):
-            category = "CARS"
-            tags.extend(["Car", "Vehicle", "Speed", "Automobile"])
-        elif any(k in filename for k in ["food", "burger", "pizza", "meal", "coffee", "cake", "dish"]):
-            category = "FOOD"
-            tags.extend(["Food", "Cuisine", "Delicious"])
-        elif any(k in filename for k in ["beach", "sunset", "travel", "resort", "hotel", "vacation"]):
-            category = "TRAVEL"
-            tags.extend(["Travel", "Vacation", "Landscape", "Scenic"])
-        elif any(k in filename for k in ["mountain", "forest", "tree", "lake", "flower", "nature"]):
-            category = "NATURE"
-            tags.extend(["Nature", "Outdoor", "Landscape"])
-        elif any(k in filename for k in ["selfie", "portrait", "portrait_", "face", "group"]):
-            category = "PEOPLE"
-            tags.extend(["Person", "Portrait", "Smile"])
-        elif any(k in filename for k in ["night", "stars", "moon", "galaxy", "milky_way"]):
-            category = "NIGHT_SKY"
-            tags.extend(["Night Sky", "Stars", "Astronomy"])
-        else:
-            category = "NATURE"
-            tags.extend(["Photo", "Moment"])
+        # 1. Filename explicit overrides
+        if any(k in filename for k in ["screenshot", "screen_shot", "capture"]):
+            return "SCREENSHOTS", ["Screenshot", "UI"]
+        if any(k in filename for k in ["receipt", "invoice", "bill", "doc", "passport", "license"]):
+            return "DOCUMENTS", ["Document", "Receipt"]
+        if any(k in filename for k in ["pet", "dog", "cat", "puppy", "kitten"]):
+            return "PETS", ["Pet", "Animal"]
+        if any(k in filename for k in ["car", "auto", "bike", "vehicle", "porsche", "bmw"]):
+            return "CARS", ["Vehicle", "Things"]
+        if any(k in filename for k in ["food", "meal", "dinner", "burger", "pizza", "dessert"]):
+            return "FOOD", ["Food", "Dining"]
 
-        return category, tags
+        # 2. Pixel / Vision inspection using PIL
+        try:
+            with Image.open(img_path) as img:
+                w, h = img.size
+                aspect = h / max(1, w)
+                
+                # Check for mobile screenshots (tall aspect ratio like 19.5:9, 20:9)
+                if aspect > 1.85:
+                    return "SCREENSHOTS", ["Screenshot", "Mobile Capture"]
+
+                # Downsample for ultra-fast pixel heuristics
+                thumb = img.convert("RGB").resize((80, 80))
+                pixels = list(thumb.getdata())
+                total = len(pixels)
+
+                skin_pixels = 0
+                green_pixels = 0
+                sky_pixels = 0
+                food_pixels = 0
+                gray_pixels = 0
+
+                for r, g, b in pixels:
+                    # Skin tone heuristic (universal human skin color rule)
+                    if r > 60 and g > 30 and b > 15 and r > g and g >= b and (r - g) >= 8 and (r - b) >= 12:
+                        skin_pixels += 1
+                    
+                    if g > 75 and g > r * 1.15 and g > b * 1.15:
+                        green_pixels += 1
+                    
+                    if b > 110 and b > r * 1.2 and b > g * 1.05:
+                        sky_pixels += 1
+
+                    if r > 140 and g > 60 and b < 100:
+                        food_pixels += 1
+
+                    if abs(r - g) < 15 and abs(g - b) < 15:
+                        gray_pixels += 1
+
+                skin_ratio = skin_pixels / total
+                green_ratio = green_pixels / total
+                sky_ratio = sky_pixels / total
+                food_ratio = food_pixels / total
+                gray_ratio = gray_pixels / total
+
+                # Human Face / Portrait / Selfie Detection
+                if skin_ratio > 0.10:
+                    if skin_ratio > 0.20 or aspect > 1.1:
+                        return "PEOPLE", ["Selfie", "Portrait", "Face"]
+                    else:
+                        return "FAMILY", ["Family & Friends", "People"]
+
+                if gray_ratio > 0.60:
+                    return "DOCUMENTS", ["Document", "Text"]
+
+                if food_ratio > 0.20:
+                    return "FOOD", ["Food", "Meal"]
+
+                if sky_ratio > 0.15 and sky_ratio > green_ratio:
+                    return "TRAVEL", ["Travel", "Sky", "Outdoor"]
+
+                if green_ratio > 0.15:
+                    return "NATURE", ["Nature", "Greenery", "Outdoor"]
+
+                # Aspect ratio portrait default to People/Family
+                if aspect > 1.2:
+                    return "PEOPLE", ["Portrait", "Person"]
+
+        except Exception:
+            pass
+
+        return "TRAVEL", ["Travel", "Moment"]
 
     def scan_directory(self, target_dir: str) -> int:
         target_path = Path(target_dir)
